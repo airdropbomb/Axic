@@ -41,7 +41,7 @@ class AixCryptoBot:
     def print_banner(self):
         banner = f"""
 {Fore.CYAN}AIXCRYPTO AUTO BOT{Style.RESET_ALL}
-{Fore.WHITE}By: FEBRIYAN{Style.RESET_ALL}
+{Fore.WHITE}By: ADB NODE{Style.RESET_ALL}
 {Fore.CYAN}============================================================{Style.RESET_ALL}
 """
         print(banner)
