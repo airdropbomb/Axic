@@ -92,7 +92,7 @@ class AixCryptoBot:
 
                 # 3. Privy Authenticate
                 auth_payload = {
-                    "chainId": "eip155:24101",
+                    "chainId": "eip155:560048",
                     "connectorType": "injected",
                     "message": msg,
                     "mode": "login-or-sign-up",
