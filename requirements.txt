@@ -2,3 +2,4 @@ curl_cffi
 eth_account
 colorama
 pytz
+requests
