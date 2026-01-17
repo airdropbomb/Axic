@@ -1,283 +1,273 @@
 import os
 import time
+import sys
 import json
 import random
-import asyncio
-import requests
-import websockets
-from datetime import datetime
+import warnings
+from datetime import datetime, timezone
+import pytz 
 from colorama import Fore, Style, init
-from web3 import Web3
+from curl_cffi import requests
+from eth_account import Account
 from eth_account.messages import encode_defunct
-from rich.console import Console
-from rich.progress import ProgressBar
-from rich.panel import Panel
-from rich.live import Live
 
+# Terminal ကို ရှင်းထုတ်ခြင်း
+os.system('clear' if os.name == 'posix' else 'cls')
+warnings.filterwarnings('ignore')
+if not sys.warnoptions:
+    os.environ["PYTHONWARNINGS"] = "ignore"
 init(autoreset=True)
-console = Console()
 
-class Logger:
-    @staticmethod
-    def _get_timestamp():
-        return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+class AixCryptoBot:
+    def __init__(self):
+        self.sitekey = "0x4AAAAAAAM8ceq5KhP1uJBt"
+        self.page_url = "https://hub.aixcrypto.ai/"
+        self.privy_app_id = "cmk3zw8d704bxl70chtewm6hd"
+        self.api_key_2captcha = ""
+        self.api_key_sctg = ""
+        self.accounts = []
+        self.proxies = []
+        self.max_bets = 5 
+        self.use_proxy = False
+        self.solver_type = "2captcha"
+        self.market_history = [] 
 
-    @staticmethod
-    def info(msg, context=""):
-        ctx = f"[{context}] " if context else ""
-        print(f"[ {Fore.LIGHTBLACK_EX}{Logger._get_timestamp()}{Style.RESET_ALL} ] ℹ️  {Fore.GREEN}INFO{Style.RESET_ALL} {ctx.ljust(20)}{msg}")
-
-    @staticmethod
-    def warn(msg, context=""):
-        ctx = f"[{context}] " if context else ""
-        print(f"[ {Fore.LIGHTBLACK_EX}{Logger._get_timestamp()}{Style.RESET_ALL} ] ⚠️  {Fore.YELLOW}WARN{Style.RESET_ALL} {ctx.ljust(20)}{msg}")
-
-    @staticmethod
-    def error(msg, context=""):
-        ctx = f"[{context}] " if context else ""
-        print(f"[ {Fore.LIGHTBLACK_EX}{Logger._get_timestamp()}{Style.RESET_ALL} ] ❌ {Fore.RED}ERROR{Style.RESET_ALL} {ctx.ljust(20)}{msg}")
-
-def get_random_user_agent():
-    user_agents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36'
-    ]
-    return random.choice(user_agents)
-
-def get_headers(privy_token=None, is_privy=False):
-    headers = {
-        'accept': 'application/json',
-        'accept-language': 'en-US,en;q=0.9',
-        'content-type': 'application/json',
-        'origin': 'https://hub.aixcrypto.ai',
-        'referer': 'https://hub.aixcrypto.ai/',
-        'user-agent': get_random_user_agent()
-    }
-    if is_privy:
-        headers['privy-app-id'] = 'cmk3zw8d704bxl70chtewm6hd'
-        headers['privy-ca-id'] = '119aa643-ca62-45b4-b305-e0fab44f33ae'
-        headers['privy-client'] = 'react-auth:3.10.1'
-    if privy_token:
-        headers['cookie'] = f"privy-token={privy_token}"
-    return headers
-
-async def solve_captcha(api_key):
-    site_key = '0x4AAAAAAAM8ceq5KhP1uJBt'
-    page_url = 'https://hub.aixcrypto.ai/'
+    def get_wib_time(self):
+        try:
+            wib = pytz.timezone('Asia/Jakarta')
+            return datetime.now(wib).strftime('%H:%M:%S')
+        except:
+            return datetime.now().strftime('%H:%M:%S')
     
-    try:
-        # Submit to 2captcha
-        submit_url = f"http://2captcha.com/in.php?key={api_key}&method=turnstile&sitekey={site_key}&pageurl={page_url}&json=1"
-        res = requests.get(submit_url).json()
-        
-        if res.get('status') != 1:
-            return None
+    def print_banner(self):
+        banner = f"""
+{Fore.CYAN}AIXCRYPTO AUTO BOT{Style.RESET_ALL}
+{Fore.WHITE}By: ADB NODE{Style.RESET_ALL}
+{Fore.CYAN}============================================================{Style.RESET_ALL}
+"""
+        print(banner)
+    
+    def log(self, message, level="INFO"):
+        time_str = self.get_wib_time()
+        colors = {
+            "INFO": Fore.CYAN, "SUCCESS": Fore.GREEN, "ERROR": Fore.RED,
+            "WARNING": Fore.YELLOW, "BET": Fore.BLUE, "CYCLE": Fore.MAGENTA,
+            "TASK": Fore.MAGENTA, "WIN": Fore.GREEN, "LOSE": Fore.RED,
+            "AI": Fore.LIGHTMAGENTA_EX
+        }
+        color = colors.get(level, Fore.WHITE)
+        if message == "Processing Daily Check-in...":
+            color = Fore.GREEN
+        print(f"[{time_str}] {color}[{level}] {message}{Style.RESET_ALL}")
+    
+    def format_proxy(self, proxy_str):
+        if not proxy_str: return None
+        if proxy_str.startswith("http") or proxy_str.startswith("socks"): return proxy_str
+        parts = proxy_str.split(':')
+        if len(parts) == 4: 
+            return f"http://{parts[2]}:{parts[3]}@{parts[0]}:{parts[1]}"
+        return f"http://{proxy_str}"
+
+    def load_files(self):
+        try:
+            if os.path.exists("2captcha.txt"):
+                with open("2captcha.txt", "r") as f: self.api_key_2captcha = f.read().strip()
+            if os.path.exists("sctg.txt"):
+                with open("sctg.txt", "r") as f: self.api_key_sctg = f.read().strip()
             
-        captcha_id = res['request']
-        Logger.info("Solving Cloudflare captcha...", "Captcha")
+            with open("accounts.txt", "r") as f:
+                self.accounts = [line.strip() for line in f if line.strip()]
+
+            if os.path.exists("proxy.txt"):
+                with open("proxy.txt", "r") as f:
+                    raw_proxies = [line.strip() for line in f if line.strip()]
+                    self.proxies = [self.format_proxy(p) for p in raw_proxies]
+        except Exception as e:
+            self.log(f"File missing: {e}", "ERROR")
+            sys.exit()
+
+    def show_menu(self):
+        print(f"{Fore.CYAN}============================================================{Style.RESET_ALL}")
+        print(f"1. Run with Proxy\n2. Run without Proxy")
+        choice = input(f"{Fore.GREEN}Select Mode (1/2): {Style.RESET_ALL}").strip()
+        self.use_proxy = True if choice == '1' else False
         
-        for _ in range(20):
-            await asyncio.sleep(5)
-            check_url = f"http://2captcha.com/res.php?key={api_key}&action=get&id={captcha_id}&json=1"
-            status_res = requests.get(check_url).json()
-            if status_res.get('status') == 1:
-                return status_res['request']
+        print(f"{Fore.CYAN}============================================================{Style.RESET_ALL}")
+        print(f"1. 2Captcha\n2. SCTG")
+        solver_choice = input(f"{Fore.GREEN}Select Solver (1/2): {Style.RESET_ALL}").strip()
+        self.solver_type = "sctg" if solver_choice == '2' else "2captcha"
+
+        print(f"{Fore.CYAN}============================================================{Style.RESET_ALL}")
+        input_bet = input(f"{Fore.GREEN}Enter Max Bets per Account : {Style.RESET_ALL}").strip()
+        self.max_bets = int(input_bet) if input_bet else 5
+
+    def solve_turnstile_2captcha(self):
+        self.log("Solving Captcha with 2Captcha...", "INFO")
+        import requests as r_sync
+        try:
+            payload = {"key": self.api_key_2captcha, "method": "turnstile", "sitekey": self.sitekey, "pageurl": self.page_url, "json": 1}
+            resp = r_sync.post("http://2captcha.com/in.php", data=payload).json()
+            if resp.get('status') != 1: return None
+            req_id = resp.get('request')
+            for _ in range(30):
+                time.sleep(4)
+                res = r_sync.get(f"http://2captcha.com/res.php?key={self.api_key_2captcha}&action=get&id={req_id}&json=1").json()
+                if res.get('status') == 1: return res.get('request')
+        except: return None
         return None
-    except Exception as e:
-        Logger.error(f"Captcha error: {str(e)}")
+
+    def solve_turnstile_sctg(self):
+        self.log("Solving Captcha with SCTG...", "INFO")
+        import requests as r_sync
+        from urllib.parse import urlencode
+        params = {"key": self.api_key_sctg, "method": "turnstile", "pageurl": self.page_url, "sitekey": self.sitekey}
+        try:
+            response = r_sync.get("https://sctg.xyz/in.php?" + urlencode(params), timeout=30)
+            if "|" not in response.text: return None
+            task_id = response.text.split("|")[1]
+            for _ in range(60):
+                time.sleep(5)
+                poll = r_sync.get(f"https://sctg.xyz/res.php?key={self.api_key_sctg}&id={task_id}&action=get", timeout=30)
+                if "OK|" in poll.text: return poll.text.split("|")[1]
+        except: return None
         return None
 
-async def perform_login(private_key, proxy, captcha_api_key, context):
-    w3 = Web3()
-    account = w3.eth.account.from_key(private_key)
-    address = account.address
+    def solve_turnstile(self):
+        return self.solve_turnstile_sctg() if self.solver_type == "sctg" else self.solve_turnstile_2captcha()
 
-    # 1. Solve Captcha
-    captcha_token = await solve_captcha(captcha_api_key)
-    if not captcha_token: return None
+    def fetch_market_history(self, session, address):
+        self.log("AI: Analyzing market history...", "INFO")
+        history = []
+        try:
+            for page in range(1, 4):
+                url = f"https://hub.aixcrypto.ai/api/game/bet-history?address={address}&page={page}&pageSize=10"
+                resp = session.get(url).json()
+                bet_list = resp.get("list", [])
+                if not bet_list: break
+                for bet in bet_list:
+                    pred, result = bet.get("prediction"), bet.get("result")
+                    if result == "WIN": history.append(pred)
+                    elif result == "LOSE": history.append("DOWN" if pred == "UP" else "UP")
+            self.market_history = history[::-1]
+            self.log(f"AI: Loaded {len(self.market_history)} historical data points.", "AI")
+        except: self.market_history = []
 
-    # 2. Privy Login
-    proxies = {"http": proxy, "https": proxy} if proxy else None
-    
-    try:
-        # Init SIWE
-        res_init = requests.post(
-            'https://auth.privy.io/api/v1/siwe/init',
-            json={'address': address, 'token': captcha_token},
-            headers=get_headers(is_privy=True),
-            proxies=proxies
-        ).json()
-        
-        nonce = res_init['nonce']
-        issued_at = datetime.utcnow().isoformat() + "Z"
-        
-        message_text = (
-            f"hub.aixcrypto.ai wants you to sign in with your Ethereum account:\n{address}\n\n"
-            f"By signing, you are proving you own this wallet and logging in. This does not initiate a transaction or cost any fees.\n\n"
-            f"URI: https://hub.aixcrypto.ai\nVersion: 1\nChain ID: 24101\nNonce: {nonce}\nIssued At: {issued_at}\nResources:\n- https://privy.io"
-        )
-        
-        signature = account.sign_message(encode_defunct(text=message_text)).signature.hex()
-        
-        # Authenticate
-        res_auth = requests.post(
-            'https://auth.privy.io/api/v1/siwe/authenticate',
-            json={
-                'message': message_text,
-                'signature': signature,
-                'chainId': 'eip155:24101',
-                'walletClientType': 'metamask',
-                'connectorType': 'injected',
-                'mode': 'login-or-sign-up'
-            },
-            headers=get_headers(is_privy=True),
-            proxies=proxies
-        ).json()
-        
-        privy_token = res_auth.get('token')
-        if not privy_token: return None
+    def predict_next_move(self):
+        if not self.market_history or len(self.market_history) < 3:
+            return random.choice(["UP", "DOWN"]), "Random (Gathering Data)"
+        recent = self.market_history[-5:]
+        if len(recent) >= 3:
+            if recent[-1] == recent[-2] == recent[-3] == "UP": return "DOWN", "Anti-Streak (Overbought)"
+            if recent[-1] == recent[-2] == recent[-3] == "DOWN": return "UP", "Anti-Streak (Oversold)"
+        return ("DOWN" if self.market_history[-1] == "UP" else "UP"), "Smart Reversal"
 
-        # 3. AIxC Login Challenge
-        res_chall = requests.get(
-            f'https://hub.aixcrypto.ai/api/users/auth/challenge?address={address.lower()}',
-            headers=get_headers(privy_token),
-            proxies=proxies
-        ).json()
-        
-        chall_msg = res_chall['message']
-        sig_chall = account.sign_message(encode_defunct(text=chall_msg)).signature.hex()
-        
-        # Final Login
-        res_login = requests.post(
-            'https://hub.aixcrypto.ai/api/login',
-            json={'address': address.lower(), 'signature': sig_chall, 'message': chall_msg},
-            headers=get_headers(privy_token),
-            proxies=proxies
-        ).json()
-        
-        if 'sessionId' in res_login:
-            return {
-                'address': address,
-                'sessionId': res_login['sessionId'],
-                'username': res_login.get('username', 'N/A'),
-                'privyToken': privy_token
-            }
-    except Exception as e:
-        Logger.error(f"Login failed: {str(e)}", context)
-    return None
+    def claim_daily(self, session, session_id):
+        self.log("Processing Daily Check-in...", "INFO")
+        try:
+            resp = session.post("https://hub.aixcrypto.ai/api/tasks/claim", json={"taskId": 1, "sessionId": session_id})
+            if resp.status_code == 200 and resp.json().get("success"):
+                self.log(f"Daily Claim Success! Reward: +{resp.json().get('reward')}", "SUCCESS")
+            else: self.log("Daily Claim Failed/Already Claimed", "WARNING")
+        except: pass
 
-async def play_game(address, session_id, proxy, privy_token, context, max_plays):
-    uri = "wss://hub.aixcrypto.ai/ws"
-    bets_placed = 0
-    
-    try:
-        async with websockets.connect(uri) as ws:
-            await ws.send(json.dumps({"type": "register", "payload": {"address": address}}))
-            Logger.info("WebSocket connected", context)
+    def claim_all_tasks(self, session, session_id):
+        self.log("Processing Claim All Tasks...", "TASK")
+        try:
+            resp = session.post("https://hub.aixcrypto.ai/api/tasks/claim-all", json={"sessionId": session_id})
+            if resp.status_code == 200 and resp.json().get("success"):
+                self.log(f"Claim All Success! Reward: +{resp.json().get('totalReward')}", "SUCCESS")
+        except: pass
+
+    def get_user_stats(self, session, address):
+        try:
+            resp = session.get(f"https://hub.aixcrypto.ai/api/user/{address}").json()
+            self.log(f"Credits: {resp.get('credits')} | Win Rate: {resp.get('winRate', 0):.2f}%", "SUCCESS")
+        except: pass
+
+    def check_bet_result(self, session, address, round_id):
+        try:
+            resp = session.get(f"https://hub.aixcrypto.ai/api/game/bet-history?address={address}&page=1&pageSize=10").json()
+            for bet in resp.get("list", []):
+                if str(bet.get("round_id")) == str(round_id):
+                    return bet.get("result", "PENDING"), bet.get("credits_reward", 0)
+        except: pass
+        return "UNKNOWN", 0
+
+    def start_betting(self, session, session_id, address):
+        self.log(f"Starting Game Session ({self.max_bets} Rounds)", "BET")
+        self.fetch_market_history(session, address)
+        i = 0
+        while i < self.max_bets:
+            prediction, reason = self.predict_next_move()
+            try:
+                resp = session.post("https://hub.aixcrypto.ai/api/game/bet", json={"prediction": prediction, "sessionId": session_id})
+                if resp.status_code in [200, 201] and resp.json().get("success"):
+                    round_id = resp.json().get("bet", {}).get("roundId")
+                    self.log(f"Bet #{i+1} | {prediction} | AI: {reason}", "AI")
+                    time.sleep(12)
+                    res, reward = self.check_bet_result(session, address, round_id)
+                    self.log(f"Result: {res} | Reward: {reward}", "SUCCESS" if res == "WIN" else "LOSE")
+                    i += 1
+                time.sleep(5)
+            except Exception as e:
+                self.log(f"Bet Error: {e}", "ERROR")
+                time.sleep(5)
+
+    def login_process(self, private_key, proxy=None):
+        try:
+            account = Account.from_key(private_key)
+            addr = account.address
+            self.log(f"Wallet : {addr[:6]}...{addr[-4:]}", "INFO")
             
-            while bets_placed < max_plays:
-                msg = await ws.recv()
-                data = json.loads(msg)
+            captcha_token = self.solve_turnstile()
+            if not captcha_token: return
+
+            with requests.Session(impersonate="chrome124", proxies={"http": proxy, "https": proxy} if proxy else None) as s:
+                s.headers.update({"privy-app-id": self.privy_app_id, "privy-client": "react-auth:3.10.1"})
                 
-                if data.get('type') == 'round_start':
-                    prediction = random.choice(['UP', 'DOWN'])
-                    res = requests.post(
-                        'https://hub.aixcrypto.ai/api/game/bet',
-                        json={"prediction": prediction, "sessionId": session_id},
-                        headers=get_headers(privy_token),
-                        proxies={"http": proxy, "https": proxy} if proxy else None
-                    ).json()
-                    
-                    if res.get('success'):
-                        bets_placed += 1
-                        Logger.info(f"Bet placed: {prediction} ({bets_placed}/{max_plays})", context)
+                # SIWE Init
+                init_res = s.post("https://auth.privy.io/api/v1/siwe/init", json={"address": addr, "token": captcha_token}).json()
+                nonce = init_res['nonce']
+                issued_at = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
                 
-                elif data.get('type') == 'user_settlement' and data['data']['userAddress'] == address.lower():
-                    result = data['data']['result']
-                    reward = data['data']['creditsReward']
-                    Logger.info(f"Result: {result} | Reward: {reward}", context)
-            
-            return bets_placed
-    except Exception as e:
-        Logger.error(f"WebSocket Error: {str(e)}", context)
-        return bets_placed
+                msg = f"hub.aixcrypto.ai wants you to sign in with your Ethereum account:\n{addr}\n\nBy signing, you are proving you own this wallet and logging in. This does not initiate a transaction or cost any fees.\n\nURI: https://hub.aixcrypto.ai\nVersion: 1\nChain ID: 560048\nNonce: {nonce}\nIssued At: {issued_at}\nResources:\n- https://privy.io"
+                sig = account.sign_message(encode_defunct(text=msg)).signature.hex()
 
-async def process_account(pk, index, total, proxy, captcha_key):
-    context = f"Acc {index+1}/{total}"
-    Logger.info("Starting account processing...", context)
-    
-    login_info = await perform_login(pk, proxy, captcha_key, context)
-    if not login_info:
-        return
-        
-    addr, sid, p_token = login_info['address'], login_info['sessionId'], login_info['privyToken']
-    Logger.info(f"Logged in as {login_info['username']}", context)
-
-    # Fetch Limits & Play
-    try:
-        res_limit = requests.get(
-            f'https://hub.aixcrypto.ai/api/game/current-round?address={addr}',
-            headers=get_headers(p_token)
-        ).json()
-        
-        remaining = res_limit.get('dailyBetRemaining', 0)
-        if remaining > 0:
-            Logger.info(f"Available Plays: {remaining}", context)
-            await play_game(addr, sid, proxy, p_token, context, remaining)
-        else:
-            Logger.warn("No plays left for today", context)
-
-        # Tasks Claiming
-        res_tasks = requests.get(
-            f'https://hub.aixcrypto.ai/api/tasks/daily?address={addr}',
-            headers=get_headers(p_token)
-        ).json()
-        
-        for task in res_tasks.get('tasks', []):
-            if task['isCompleted'] == 1 and task['isClaimed'] == 0:
-                requests.post(
-                    'https://hub.aixcrypto.ai/api/tasks/claim',
-                    json={'taskId': task['id'], 'sessionId': sid},
-                    headers=get_headers(p_token)
-                )
-                Logger.info(f"Claimed Task: {task['title']}", context)
+                # Privy Auth
+                auth_res = s.post("https://auth.privy.io/api/v1/siwe/authenticate", json={
+                    "chainId": "eip155:560048", "connectorType": "injected", "message": msg,
+                    "mode": "login-or-sign-up", "signature": sig, "walletClientType": "metamask"
+                }).json()
                 
-    except Exception as e:
-        Logger.error(f"Error: {str(e)}", context)
+                s.cookies.set("privy-token", auth_res['token'], domain="hub.aixcrypto.ai")
+                
+                # App Login
+                ts = int(time.time() * 1000)
+                msg_app = f"Sign this message to authenticate with AIxCrypto.\n\nWallet: {addr.lower()}\nTimestamp: {ts}\n\nThis signature will not trigger any blockchain transaction or cost any gas fees."
+                sig_app = account.sign_message(encode_defunct(text=msg_app)).signature.hex()
 
-async def main():
-    console.print(Panel("[bold cyan]AIxC AUTO DAILY BOT[/bold cyan]\n[magenta]ADB NODE[/magenta]", expand=False))
-    
-    if not os.path.exists('accounts.txt'):
-        Logger.error("accounts.txt not found!")
-        return
-    
-    if not os.path.exists('2captcha.txt'):
-        Logger.error("2captcha.txt not found!")
-        return
+                login_res = s.post("https://hub.aixcrypto.ai/api/login", json={"address": addr, "message": msg_app, "signature": sig_app})
+                if login_res.status_code == 200:
+                    self.log("Login Success!", "SUCCESS")
+                    sess_id = login_res.json().get("sessionId")
+                    self.claim_daily(s, sess_id)
+                    self.start_betting(s, sess_id, addr)
+                    self.claim_all_tasks(s, sess_id)
+                    self.get_user_stats(s, addr)
+        except Exception as e: self.log(f"Account Error: {e}", "ERROR")
 
-    with open('accounts.txt', 'r') as f:
-        pks = [line.strip() for line in f if line.strip()]
-    
-    with open('2captcha.txt', 'r') as f:
-        captcha_key = f.read().strip()
-
-    proxies = []
-    if os.path.exists('proxy.txt'):
-        with open('proxy.txt', 'r') as f:
-            proxies = [line.strip() for line in f if line.strip()]
-
-    use_proxy = input(f"{Fore.CYAN}Use proxy? (y/n): ").lower() == 'y'
-
-    while True:
-        for i, pk in enumerate(pks):
-            proxy = proxies[i % len(proxies)] if use_proxy and proxies else None
-            await process_account(pk, i, len(pks), proxy, captcha_key)
-            await asyncio.sleep(5)
-            
-        Logger.info("Cycle completed. Waiting 24 hours...")
-        await asyncio.sleep(86400)
+    def run(self):
+        self.load_files()
+        self.print_banner()
+        self.show_menu()
+        cycle = 1
+        while True:
+            self.log(f"Cycle #{cycle} Started", "CYCLE")
+            for i, pk in enumerate(self.accounts):
+                self.login_process(pk, (self.proxies[i % len(self.proxies)] if self.use_proxy else None))
+            self.log(f"Cycle #{cycle} Complete", "CYCLE")
+            cycle += 1
+            time.sleep(86400)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    AixCryptoBot().run()
