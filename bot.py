@@ -93,8 +93,7 @@ class AixCryptoBot:
                     f"Chain ID: 42161\n"
                     f"Nonce: {nonce}\n"
                     f"Issued At: {now_iso}\n"
-                    f"Resources:\n"
-                    f"- https://privy.io"
+                    f"Resources: - https://privy.io"
                 )
                 
                 sig = account.sign_message(encode_defunct(text=msg)).signature.hex()
