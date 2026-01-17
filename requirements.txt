@@ -1,6 +1,4 @@
-requests
-web3
-websockets
+curl_cffi
+eth_account
 colorama
-rich
 pytz
