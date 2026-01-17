@@ -64,7 +64,7 @@ class AixCryptoBot:
             if not token: return self.log("Captcha Failed", "ERROR")
 
             with requests.Session(impersonate="chrome124", proxies={"http": proxy, "https": proxy} if proxy else None) as s:
-                # Screenshot ထဲက Header များအတိုင်း (Privy-Ca-Id ကိုပါ Dynamic ထည့်ပေးထားပါတယ်)
+                # Screenshot ထဲက Headers အတိုင်း (Dynamic Ca-Id ပါဝင်သည်)
                 ca_id = f"{random.randint(10000000, 99999999)}-{random.randint(1000, 9999)}-4{random.randint(100, 999)}-a{random.randint(100, 999)}-{random.randint(100000000000, 999999999999)}"
                 s.headers.update({
                     "authority": "auth.privy.io",
@@ -82,8 +82,8 @@ class AixCryptoBot:
                 nonce = init_res.json().get('nonce')
                 if not nonce: return self.log("No Nonce", "ERROR")
 
-                # 2. Sign Message (Screenshot ထဲက Format အတိုင်း ၁၀၀% တူအောင် ပြင်ထားပါတယ်)
-                # Chain ID 42161 ကို သုံးထားပါတယ်
+                # 2. Sign Message (Screenshot ထဲက Format အတိုင်း ၁၀၀% တူညီအောင် ပြင်ထားသည်)
+                # Chain ID 42161 (Arbitrum) ကို အသုံးပြုထားသည်
                 now_iso = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
                 msg = (
                     f"hub.aixcrypto.ai wants you to sign in with your Ethereum account:\n"
@@ -118,8 +118,7 @@ class AixCryptoBot:
                 privy_token = auth_res.json().get('token')
                 s.cookies.set("privy-token", privy_token, domain="hub.aixcrypto.ai")
 
-                # 4. App Login (Screenshot ထဲက ဒုတိယ Signature - AlxCrypto Auth)
-                # ဒုတိယ sign အတွက် timestamp ကို screenshot အတိုင်း format ပြင်ပါတယ်
+                # 4. App Login (Screenshot ထဲက ဒုတိယ Signature - AIxC Auth)
                 ts = int(time.time() * 1000)
                 msg_app = (
                     f"Sign this message to authenticate with AIxCrypto.\n\n"
