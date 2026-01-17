@@ -24,7 +24,7 @@ class AixCryptoBot:
         self.proxies = []
         self.max_bets = 5 
         self.use_proxy = False
-        self.solver_type = "2captcha"
+        self.api_key_2captcha = ""
 
     def log(self, message, level="INFO"):
         time_str = datetime.now().strftime('%H:%M:%S')
@@ -34,7 +34,7 @@ class AixCryptoBot:
     def load_files(self):
         try:
             with open("2captcha.txt", "r") as f: self.api_key_2captcha = f.read().strip()
-            with open("accounts.txt", "r") as f: self.accounts = [line.strip() for line in f if line.strip()]
+            with open("accounts.txt", "r") as f: self.accounts = [l.strip() for l in f if l.strip()]
             if os.path.exists("proxy.txt"):
                 with open("proxy.txt", "r") as f: self.proxies = [l.strip() for l in f if l.strip()]
         except Exception as e:
@@ -43,11 +43,9 @@ class AixCryptoBot:
 
     def solve_turnstile(self):
         import requests as r_sync
-        self.log("Solving Captcha via 2Captcha...", "INFO")
         try:
             p = {"key": self.api_key_2captcha, "method": "turnstile", "sitekey": self.sitekey, "pageurl": self.page_url, "json": 1}
             res = r_sync.post("http://2captcha.com/in.php", data=p).json()
-            if res.get('status') != 1: return None
             rid = res.get('request')
             for _ in range(20):
                 time.sleep(5)
@@ -65,41 +63,53 @@ class AixCryptoBot:
             token = self.solve_turnstile()
             if not token: return self.log("Captcha Failed", "ERROR")
 
-            proxies = {"http": proxy, "https": proxy} if proxy else None
-            with requests.Session(impersonate="chrome124", proxies=proxies) as s:
-                # Headers for Privy
-                headers = {
+            with requests.Session(impersonate="chrome124", proxies={"http": proxy, "https": proxy} if proxy else None) as s:
+                # Screenshot ထဲက Header များအတိုင်း (Privy-Ca-Id ကိုပါ Dynamic ထည့်ပေးထားပါတယ်)
+                ca_id = f"{random.randint(10000000, 99999999)}-{random.randint(1000, 9999)}-4{random.randint(100, 999)}-a{random.randint(100, 999)}-{random.randint(100000000000, 999999999999)}"
+                s.headers.update({
                     "authority": "auth.privy.io",
                     "accept": "application/json",
                     "content-type": "application/json",
                     "privy-app-id": self.privy_app_id,
+                    "privy-ca-id": ca_id,
                     "privy-client": "react-auth:3.10.1",
                     "origin": "https://hub.aixcrypto.ai",
                     "referer": "https://hub.aixcrypto.ai/"
-                }
+                })
                 
                 # 1. SIWE Init
-                init_res = s.post("https://auth.privy.io/api/v1/siwe/init", json={"address": addr, "token": token}, headers=headers)
+                init_res = s.post("https://auth.privy.io/api/v1/siwe/init", json={"address": addr, "token": token})
                 nonce = init_res.json().get('nonce')
                 if not nonce: return self.log("No Nonce", "ERROR")
 
-                # 2. Sign Message (AIxCrypto current chain is 24101)
-                now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-                # Chain ID ကို ၂ မျိုးစလုံး စမ်းကြည့်နိုင်အောင် eip155:24101 ကို သုံးထားပါတယ်
-                msg = f"hub.aixcrypto.ai wants you to sign in with your Ethereum account:\n{addr}\n\nBy signing, you are proving you own this wallet and logging in. This does not initiate a transaction or cost any fees.\n\nURI: https://hub.aixcrypto.ai\nVersion: 1\nChain ID: 24101\nNonce: {nonce}\nIssued At: {now}\nResources:\n- https://privy.io"
+                # 2. Sign Message (Screenshot ထဲက Format အတိုင်း ၁၀၀% တူအောင် ပြင်ထားပါတယ်)
+                # Chain ID 42161 ကို သုံးထားပါတယ်
+                now_iso = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+                msg = (
+                    f"hub.aixcrypto.ai wants you to sign in with your Ethereum account:\n"
+                    f"{addr}\n\n"
+                    f"By signing, you are proving you own this wallet and logging in. This does not initiate a transaction or cost any fees.\n\n"
+                    f"URI: https://hub.aixcrypto.ai\n"
+                    f"Version: 1\n"
+                    f"Chain ID: 42161\n"
+                    f"Nonce: {nonce}\n"
+                    f"Issued At: {now_iso}\n"
+                    f"Resources:\n"
+                    f"- https://privy.io"
+                )
                 
                 sig = account.sign_message(encode_defunct(text=msg)).signature.hex()
 
                 # 3. Privy Authenticate
                 auth_payload = {
-                    "chainId": "eip155:560048",
+                    "chainId": "eip155:42161",
                     "connectorType": "injected",
                     "message": msg,
                     "mode": "login-or-sign-up",
                     "signature": sig,
                     "walletClientType": "metamask"
                 }
-                auth_res = s.post("https://auth.privy.io/api/v1/siwe/authenticate", json=auth_payload, headers=headers)
+                auth_res = s.post("https://auth.privy.io/api/v1/siwe/authenticate", json=auth_payload)
                 
                 if auth_res.status_code != 200:
                     self.log(f"Privy Auth Failed: {auth_res.text}", "ERROR")
@@ -108,19 +118,29 @@ class AixCryptoBot:
                 privy_token = auth_res.json().get('token')
                 s.cookies.set("privy-token", privy_token, domain="hub.aixcrypto.ai")
 
-                # 4. App Login
+                # 4. App Login (Screenshot ထဲက ဒုတိယ Signature - AlxCrypto Auth)
+                # ဒုတိယ sign အတွက် timestamp ကို screenshot အတိုင်း format ပြင်ပါတယ်
+                ts = int(time.time() * 1000)
+                msg_app = (
+                    f"Sign this message to authenticate with AIxCrypto.\n\n"
+                    f"Wallet: {addr.lower()}\n"
+                    f"Timestamp: {ts}\n\n"
+                    f"This signature will not trigger any blockchain transaction or cost any gas fees."
+                )
+                sig_app = account.sign_message(encode_defunct(text=msg_app)).signature.hex()
+                
                 login_res = s.post("https://hub.aixcrypto.ai/api/login", json={
                     "address": addr,
-                    "message": msg,
-                    "signature": sig
+                    "message": msg_app,
+                    "signature": sig_app
                 })
                 
                 if login_res.status_code == 200:
                     self.log("Login Success!", "SUCCESS")
-                    sess_id = login_res.json().get('sessionId')
-                    # Tasks
+                    data = login_res.json()
+                    sess_id = data.get('sessionId')
                     s.post("https://hub.aixcrypto.ai/api/tasks/claim", json={"taskId": 1, "sessionId": sess_id})
-                    self.log("Daily Claimed", "SUCCESS")
+                    self.log("Daily Task Claimed", "SUCCESS")
                 else:
                     self.log("AIxC Login Failed", "ERROR")
 
@@ -128,11 +148,9 @@ class AixCryptoBot:
 
     def run(self):
         self.load_files()
-        print(f"{Fore.CYAN}AIxCrypto Bot Started | Accounts: {len(self.accounts)}{Style.RESET_ALL}")
         while True:
             for i, pk in enumerate(self.accounts):
                 self.login_process(pk, self.proxies[i%len(self.proxies)] if self.use_proxy else None)
-            self.log("Cycle Complete. Sleep 24h.", "CYCLE")
             time.sleep(86400)
 
 if __name__ == "__main__":
